@@ -1,33 +1,50 @@
 Vue
 <script setup lang="ts">
-import { ref } from 'vue'
- 
-const email = ref('')
-const password = ref('')
-const showPassword = ref(false)
- 
-const errors = ref({
-email: '',
-password: ''
-})
- 
-const login = () => {
-errors.value.email = ''
-errors.value.password = ''
- 
-if (!email.value) {
-errors.value.email = 'Email is required'
+import axios from "axios";
+import { ref } from "vue";
+
+const email = ref("");
+const password = ref("");
+const showPassword = ref(false);
+const errors = ref({ email: "", password: "" });
+
+const login = async () => {
+
+  try {
+
+    const response = await axios.post(
+  "http://localhost:3000/api/auth/login",
+  {
+    email: email.value,
+    password: password.value
+  }
+);
+
+    localStorage.setItem(
+      "user",
+      JSON.stringify(response.data.user)
+    );
+
+    alert("Đăng nhập thành công");
+
+  } catch (error: any) {
+
+  console.log(error);
+
+  if(error.response){
+    console.log(error.response.data);
+  }
+
+  alert(
+    error.response?.data?.message ||
+    "Không kết nối được tới server"
+  );
+
 }
- 
-if (!password.value) {
-errors.value.password = 'Password is required'
-}
- 
-if (!errors.value.email && !errors.value.password) {
-console.log('Login success')
-}
-}
+
+};
 </script>
+
  
 <template>
 <div id="app" class="login-container">
@@ -36,7 +53,9 @@ console.log('Login success')
 <form @submit.prevent="login" class="login-form">
 <p class="signup-link">
 Need an account?
-<a href="#">Sign up</a>
+<router-link to="/signup">
+  Sign Up
+</router-link>
 </p>
  
 <div class="form-group">
@@ -96,7 +115,7 @@ Forgot your password?
     /* Use a custom font */
     @import url('https://fonts.googleapis.com/css2?family=Roboto&display=swap');
  
-    /* Define colors */
+    
     :root {
       --primary-color: #2E86C1;
       --danger-color: #dc3545;
@@ -115,13 +134,22 @@ Forgot your password?
  
     /* Style the container */
     .login-container {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-      background-color: var(--gray-color);
-    }
+  width: 100vw;
+  min-height: 100vh;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  background: linear-gradient(
+    to bottom,
+    #2c3e50,
+    #3498db,
+    #eaf4ff,
+    #ffffff
+  );
+}
  
     /* Style the form */
     .login-form {
@@ -140,7 +168,7 @@ Forgot your password?
     .login-header {
       font-size: 2rem;
       margin-bottom: 1rem;
-      color: #333;
+      color: white;
       text-align: center;
       text-transform: uppercase;
       letter-spacing: 0.1em;
@@ -221,9 +249,9 @@ background-color: #eef7ff;
       font-size: 1.2rem;
       /* increase font size */
       border-radius: 50px;
-      /* use a larger value for border-radius to make the button more rounded */
+    
       border: none;
-      color: bla;
+      color: black;
       background-color: var(--primary-color);
       cursor: pointer;
       transition: all 0.2s ease;
