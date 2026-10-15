@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from "vue-router";
 import HomeView from "../views/HomeView.vue";
 import Login from "../views/Login.vue";
 import SignUp from "../views/SignUp.vue";
+import ProductDetail from "../views/ProductDetail.vue";
 
 const router = createRouter({
   history: createWebHistory(),
@@ -22,6 +23,11 @@ const router = createRouter({
       name: "signup",
       component: SignUp,
     },
+    {
+      path: "/products/:id",
+      name: "product-detail",
+      component: ProductDetail,
+  }
   ],
   scrollBehavior: () => ({ top: 0 }),
 });
