@@ -1,0 +1,28 @@
+{
+  "name": "sd-11-shoe-store",
+  "private": true,
+  "version": "1.0.0",
+  "description": "SD_11 - Vue 3, Vite, TypeScript frontend + Spring Boot REST API + SQL Server",
+  "type": "module",
+  "scripts": {
+    "setup": "npm install",
+    "dev": "concurrently -n WEB,API -c cyan,green \"npm:dev:web\" \"npm:dev:api\"",
+    "dev:web": "vite --host localhost --port 5173",
+    "dev:api": "mvn -f backend/pom.xml spring-boot:run",
+    "build": "vite build",
+    "test": "node --test test/*.test.cjs",
+    "preview": "vite preview --port=4173"
+  },
+  "dependencies": {
+    "chart.js": "^4.5.1",
+    "vue": "^3.5.35",
+    "vue-router": "^4.4.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "concurrently": "^9.1.2",
+    "tailwindcss": "^4.3.3",
+    "vite": "^6.2.3"
+  }
+}

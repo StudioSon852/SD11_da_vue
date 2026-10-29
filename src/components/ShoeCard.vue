@@ -1,0 +1,481 @@
+<script setup>
+import { computed, ref, watch } from "vue"
+import { useRouter } from "vue-router"
+import { addToCart, formatCurrency, showDrawer } from "../stores/cartStore"
+import { notify } from "../stores/uiStore"
+import fallbackProductImage from "../../img/hero-sneakers.jpg"
+
+const props = defineProps({
+  product: { type: Object, required: true },
+})
+
+const brandName = computed(() => props.product.brand_name || props.product.brand || "")
+const baseName = computed(() => props.product.product_name || props.product.name || "")
+const sportName = computed(() => props.product.sport || "")
+const displayName = computed(() => (sportName.value ? `${sportName.value} - ${baseName.value}` : baseName.value))
+
+const router = useRouter()
+const productLink = computed(() => `/product/${props.product.id_product || props.product.id}`)
+const onProductImageError = (event) => {
+  if (event.target.dataset.fallbackApplied) return
+  event.target.dataset.fallbackApplied = "true"
+  event.target.src = fallbackProductImage
+}
+
+const soldCount = computed(() => Math.max(0, Number(props.product.sold_count ?? props.product.soldCount ?? 0) || 0))
+
+/* Modal chon bien the */
+const showVariantModal = ref(false)
+const selectedColor = ref(null)
+const selectedSize = ref(null)
+const selectedQty = ref(1)
+
+const colorList = computed(() => {
+  if (props.product.colors && props.product.colors.length > 0) {
+    return props.product.colors.map(c => ({
+      name: c.name || c.ColorName || "",
+      hex: c.hex || c.ColorHex || "",
+      image: c.image || c.ImageURL || props.product.image_url || "",
+    }))
+  }
+  const map = {}
+  for (const v of (props.product.variants || [])) {
+    if (!v.color) continue
+    if (!map[v.color]) map[v.color] = { name: v.color, hex: v.hex || "", image: props.product.image_url || "" }
+  }
+  return Object.values(map)
+})
+
+const sizeList = computed(() => {
+  const variants = props.product.variants || []
+  if (variants.length === 0) return props.product.sizes || []
+  if (!selectedColor.value) return [...new Set(variants.map(v => v.size).filter(Boolean))]
+  return variants.filter(v => v.color === selectedColor.value.name).map(v => v.size).filter(Boolean)
+})
+
+const getVariant = (colorName, sizeName) => {
+  return (props.product.variants || []).find(v => v.color === colorName && v.size === sizeName) || null
+}
+
+const maxCartQuantity = 99
+
+const selectedVariantId = computed(() => {
+  if (!selectedColor.value || !selectedSize.value) return null
+  const v = getVariant(selectedColor.value.name, selectedSize.value)
+  return v?.id ?? null
+})
+const selectedVariant = computed(() => {
+  if (!selectedColor.value || !selectedSize.value) return null
+  return getVariant(selectedColor.value.name, selectedSize.value)
+})
+
+const hasVariants = computed(() => (props.product.variants || []).length > 0)
+const previewImage = computed(() => selectedColor.value?.image || props.product.image_url || "")
+
+const originalPrice = computed(() => {
+  const value = Number(selectedVariant.value?.price ?? props.product.price ?? props.product.BasePrice ?? 0)
+  return Number.isFinite(value) && value > 0 ? value : 0
+})
+const salePrice = computed(() => {
+  const value = Number(selectedVariant.value?.sale_price ?? props.product.sale_price ?? 0)
+  return Number.isFinite(value) && value > 0 ? value : 0
+})
+const hasDiscount = computed(() =>
+  originalPrice.value > 0 && salePrice.value > 0 && salePrice.value < originalPrice.value,
+)
+const badgeLabel = computed(() => {
+  const tag = props.product.tag || props.product.badge || props.product.label
+  if (tag) return String(tag)
+  if (props.product.is_new || props.product.isNew) return 'MỚI'
+  if (props.product.is_featured || props.product.IsFeatured) return 'BÁN CHẠY'
+  if (hasDiscount.value) return 'SALE'
+  return props.product.sport || props.product.category_name || props.product.category || ''
+})
+const badgeTone = computed(() => {
+  const label = badgeLabel.value.toLowerCase()
+  return /mới|new|limited/.test(label) ? 'dark' : 'light'
+})
+const colorText = computed(() => {
+  const value = props.product.color_name || props.product.color || props.product.color_label
+  if (value) return String(value)
+  return (props.product.f_colors || []).map((color) => {
+    if (typeof color === 'string') return color
+    return color?.name || color?.color_label || color?.color_name || ''
+  }).filter(Boolean).join(' / ')
+})
+const displayPrice = computed(() => hasDiscount.value ? salePrice.value : originalPrice.value)
+const discountPercent = computed(() => {
+  if (!hasDiscount.value) return 0
+  // Không làm tròn về 0: ví dụ 100.000đ -> 99.999đ vẫn phải cho khách biết
+  // đây là giá khuyến mãi (0,001%), thay vì mất luôn nhãn giảm giá.
+  return ((originalPrice.value - salePrice.value) / originalPrice.value) * 100
+})
+const discountLabel = computed(() => {
+  if (!discountPercent.value) return ''
+  const rounded = Math.round(discountPercent.value * 1000) / 1000
+  return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 3 }).format(rounded)
+})
+
+function openVariantModal() {
+  selectedColor.value = colorList.value.length > 0 ? colorList.value[0] : null
+  const availSizes = sizeList.value
+  if (availSizes.length === 1) {
+    selectedSize.value = availSizes[0]
+  } else if (sizeList.value.length === 1) {
+    selectedSize.value = sizeList.value[0]
+  } else {
+    selectedSize.value = null
+  }
+  selectedQty.value = 1
+  showVariantModal.value = true
+}
+
+watch(selectedColor, () => {
+  const availSizes = sizeList.value
+  if (availSizes.length === 1) {
+    selectedSize.value = availSizes[0]
+  } else if (sizeList.value.length === 1) {
+    selectedSize.value = sizeList.value[0]
+  } else {
+    selectedSize.value = null
+  }
+})
+watch(selectedSize, () => { selectedQty.value = 1 })
+
+const galleryImages = computed(() => {
+  const imgs = []
+  if (props.product.image_url) imgs.push(props.product.image_url)
+  colorList.value.forEach(c => { if (c.image && !imgs.includes(c.image)) imgs.push(c.image) })
+  // thêm ảnh variant nếu có
+  ;(props.product.variants||[]).slice(0,3).forEach(v=>{ if(v.image && !imgs.includes(v.image)) imgs.push(v.image) })
+  return [...new Set(imgs)].slice(0,5)
+})
+const galleryIndex = computed(() => {
+  const idx = galleryImages.value.indexOf(previewImage.value)
+  return idx >=0 ? idx : 0
+})
+function galleryPrev() {
+  const imgs = galleryImages.value
+  if (!imgs.length) return
+  const idx = galleryIndex.value
+  const prev = (idx - 1 + imgs.length) % imgs.length
+  const col = colorList.value.find(c=>c.image===imgs[prev])
+  if (col) selectedColor.value = col
+}
+function galleryNext() {
+  const imgs = galleryImages.value
+  if (!imgs.length) return
+  const idx = galleryIndex.value
+  const next = (idx + 1) % imgs.length
+  const col = colorList.value.find(c=>c.image===imgs[next])
+  if (col) selectedColor.value = col
+}
+function selectThumb(img) {
+  const col = colorList.value.find(c=>c.image===img)
+  if (col) selectedColor.value = col
+}
+
+
+
+async function confirmAddToCart() {
+  const variants = props.product.variants || []
+  const hasVariants = variants.length > 0
+  if (hasVariants) {
+    if (!selectedSize.value) {
+      const availSizes = sizeList.value
+      if (availSizes.length === 1) {
+        selectedSize.value = availSizes[0]
+      } else if (sizeList.value.length === 1) {
+        selectedSize.value = sizeList.value[0]
+      } else {
+        notify({ type: "warning", message: "Vui lòng chọn kích thước." });
+        return
+      }
+    }
+  }
+  const colorObj = selectedColor.value
+    ? { color_label: selectedColor.value.name, color_name: selectedColor.value.name, color_hex: selectedColor.value.hex || "", image: selectedColor.value.image || "" }
+    : { color_label: "Tiêu chuẩn", color_name: "Tieu chuan" }
+  const sizeObj = { size_name: selectedSize.value || props.product.default_size || "" }
+  const result = await addToCart({
+    product: {
+      ...props.product,
+      price: selectedVariant.value?.price ?? props.product.price,
+      sale_price: selectedVariant.value?.sale_price ?? 0,
+    }, quantity: selectedQty.value,
+    size: sizeObj, color: colorObj,
+    variantId: selectedVariantId.value,
+  })
+  if (!result.ok) { notify({ type: "warning", message: result.message }); return }
+  showVariantModal.value = false
+  showDrawer()
+  notify({ type: "success", title: "Đã thêm vào giỏ", message: props.product.product_name || props.product.name, duration: 2200 })
+}
+async function handleBuyNow() {
+  const variants = props.product.variants || []
+  const hasVariants = variants.length > 0
+  if (hasVariants) {
+    if (!selectedSize.value) {
+      const availSizes = sizeList.value
+      if (availSizes.length === 1) {
+        selectedSize.value = availSizes[0]
+      } else if (sizeList.value.length === 1) {
+        selectedSize.value = sizeList.value[0]
+      } else {
+        notify({ type: "warning", message: "Vui lòng chọn kích thước." });
+        return
+      }
+    }
+  }
+  const colorObj = selectedColor.value
+    ? { color_label: selectedColor.value.name, color_name: selectedColor.value.name, color_hex: selectedColor.value.hex || "", image: selectedColor.value.image || "" }
+    : { color_label: "Tiêu chuẩn", color_name: "Tieu chuan" }
+  const sizeObj = { size_name: selectedSize.value || props.product.default_size || "" }
+  const result = await addToCart({
+    product: {
+      ...props.product,
+      price: selectedVariant.value?.price ?? props.product.price,
+      sale_price: selectedVariant.value?.sale_price ?? 0,
+    }, quantity: selectedQty.value,
+    size: sizeObj, color: colorObj,
+    variantId: selectedVariantId.value,
+  })
+  if (!result.ok) { notify({ type: "warning", message: result.message }); return }
+  showVariantModal.value = false
+  router.push('/checkout')
+  notify({ type: "success", title: "Mua ngay", message: props.product.product_name || props.product.name, duration: 2200 })
+}
+</script>
+
+<template>
+  <div class="shoe-card">
+    <div class="shoe-media">
+      <span v-if="badgeLabel" class="shoe-tag" :class="`shoe-tag-${badgeTone}`">{{ badgeLabel }}</span>
+      <span class="shoe-sold-count">Đã bán {{ soldCount }}</span>
+      <router-link :to="productLink" class="shoe-image-link" tabindex="-1" aria-hidden="true">
+        <img :src="product.image_url" :alt="product.product_name || product.name" @error="onProductImageError">
+      </router-link>
+      <!-- Figma hover action: thêm vào giỏ -->
+      <div class="hover-actions">
+        <button class="hover-add-btn" type="button" @click.prevent.stop="openVariantModal">Thêm vào giỏ</button>
+      </div>
+      <span class="shoe-shine"></span>
+    </div>
+    <div class="shoe-body">
+      <span v-if="brandName" class="shoe-brand">{{ brandName }}</span>
+      <router-link :to="productLink" class="shoe-name">{{ displayName }}</router-link>
+      <span v-if="colorText" class="shoe-color">{{ colorText }}</span>
+      <div class="shoe-price">
+        <span v-if="hasDiscount" class="price-sale">{{ formatCurrency(displayPrice) }}</span>
+        <span v-else class="price-regular">{{ formatCurrency(displayPrice) }}</span>
+        <span v-if="hasDiscount" class="price-original">{{ formatCurrency(originalPrice) }}</span>
+      </div>
+      <button class="mobile-add-btn" type="button" @click.prevent.stop="openVariantModal">Thêm vào giỏ</button>
+    </div>
+  </div>
+
+  <Teleport to="body">
+    <transition name="vm-fade">
+      <div v-if="showVariantModal" class="vm-overlay" @click.self="showVariantModal = false">
+        <div class="vm-box-quick">
+          <button class="vm-close-quick" @click="showVariantModal = false"><i class="icon icon-x-lg"></i></button>
+          <div class="vm-quick-grid">
+            <!-- Gallery -->
+            <div class="vm-gallery">
+              <div class="vm-main-wrap">
+                <img :src="previewImage" :alt="baseName" class="vm-main-img">
+                <button v-if="galleryImages.length>1" class="vm-nav vm-nav-prev" @click="galleryPrev"><i class="icon icon-chevron-left"></i></button>
+                <button v-if="galleryImages.length>1" class="vm-nav vm-nav-next" @click="galleryNext"><i class="icon icon-chevron-right"></i></button>
+              </div>
+              <div class="vm-thumbs">
+                <button v-for="img in galleryImages" :key="img" class="vm-thumb" :class="{ active: previewImage===img }" @click="selectThumb(img)">
+                  <img :src="img" :alt="baseName">
+                </button>
+              </div>
+            </div>
+            <!-- Details -->
+            <div class="vm-details">
+              <h2 class="vm-title-quick">{{ displayName }}</h2>
+              <div class="vm-brand-line">Thương hiệu: <strong>{{ brandName || 'ShoeGroup' }}</strong> · Loại: <strong>{{ product.category_name || product.sport || 'Giày' }}</strong></div>
+              <div v-if="product.material_name" class="vm-material-line">Chất liệu: {{ product.material_name }}</div>
+              <div class="vm-price-row">
+                <span class="vm-price-now">{{ formatCurrency(displayPrice) }}</span>
+                <span v-if="hasDiscount" class="vm-price-old">{{ formatCurrency(originalPrice) }}</span>
+                <span v-if="hasDiscount" class="vm-discount-tag">-{{ discountLabel }}%</span>
+              </div>
+
+              <div v-if="colorList.length > 0" class="vm-section">
+                <div class="vm-label">Màu sắc<span v-if="selectedColor">: {{ selectedColor.name }}</span></div>
+                <div class="vm-color-list">
+                  <button v-for="c in colorList" :key="c.name" class="vm-color-btn" :class="{ active: selectedColor?.name === c.name }" @click="selectedColor = c" :title="c.name">
+                    <img v-if="c.image" :src="c.image" :alt="c.name" class="vm-color-img">
+                    <span v-else-if="c.hex" class="vm-color-swatch" :style="{ background: c.hex }"></span>
+                    <span class="vm-color-name">{{ c.name }}</span>
+                    <i class="icon icon-check-lg vm-color-check"></i>
+                  </button>
+                </div>
+              </div>
+
+              <div v-if="sizeList.length > 0" class="vm-section">
+                <div class="vm-label">Kích thước<span v-if="selectedSize"> : {{ selectedSize }}</span></div>
+                <div class="vm-size-list">
+                  <button v-for="sz in sizeList" :key="sz" class="vm-size-btn"
+                    :class="{ active: selectedSize === sz }"
+                    @click="selectedSize = sz">
+                    {{ sz }}
+                  </button>
+                </div>
+                <a href="#" class="vm-size-guide" @click.prevent><i class="icon icon-rulers mr-1"></i>Hướng dẫn chọn size</a>
+              </div>
+
+              <div class="vm-section">
+                <div class="vm-label">Số lượng</div>
+                <div class="vm-qty-row">
+                  <div class="vm-qty-box">
+                    <button class="vm-qty-btn" :disabled="hasVariants && !selectedSize" @click="selectedQty = Math.max(1, selectedQty - 1)"><i class="icon icon-dash"></i></button>
+                    <span class="vm-qty-val">{{ selectedQty }}</span>
+                    <button class="vm-qty-btn" :disabled="hasVariants && !selectedSize" @click="selectedQty = Math.min(maxCartQuantity, selectedQty + 1)"><i class="icon icon-plus"></i></button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="vm-actions">
+                <button class="vm-btn-buy" @click="handleBuyNow"><i class="icon icon-bag mr-2"></i>MUA NGAY</button>
+                <button class="vm-btn-add" @click="confirmAddToCart"><i class="icon icon-cart-plus mr-2"></i>THÊM VÀO GIỎ</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </transition>
+  </Teleport>
+</template>
+
+<style scoped>
+.shoe-card { display: flex; flex-direction: column; height: 100%; min-width: 0; background: transparent; border: 0; border-radius: 0; overflow: visible; }
+.shoe-card:hover { border-color: transparent; box-shadow: none; }
+
+.shoe-media { position: relative; display: block; aspect-ratio: 4 / 5; margin-bottom: 12px; background: #F0F0F0; overflow: hidden; border: 0; padding: 0; border-radius: 0; }
+.shoe-image-link { position: absolute; inset: 0; display: block; }
+.shoe-media img { width: 100%; height: 100%; object-fit: cover; transition: transform .6s ease; }
+.shoe-card:hover .shoe-media img { transform: scale(1.05); }
+.shoe-tag { position: absolute; top: 12px; left: 12px; z-index: 2; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 6px 9px; border-radius: 0; line-height: 1.15; }
+.shoe-sold-count { position:absolute; left:10px; bottom:10px; z-index:2; padding:4px 7px; border-radius:3px; background:rgba(20,28,43,.72); color:#fff; font-size:11px; font-weight:600; letter-spacing:.01em; backdrop-filter:blur(3px); }
+.shoe-tag-light { background: #fff; color: #0E0E0E; }
+.shoe-tag-dark { background: #0E0E0E; color: #fff; }
+.shoe-tag-sale { background: #fff; color: #0E0E0E; }
+.hover-actions { position: absolute; inset: 0; opacity: 0; pointer-events: none; transition: opacity .18s ease; z-index: 3; }
+.shoe-card:hover .hover-actions { opacity: 1; pointer-events: auto; }
+.hover-add-btn { position: absolute; bottom: 0; left: 0; right: 0; transform: translateY(100%); background: #0E0E0E; color: #fff; border: 0; padding: 12px 16px; font-size: 13px; font-weight: 600; letter-spacing: .01em; cursor: pointer; transition: transform .3s ease, background-color .2s ease; }
+.shoe-card:hover .hover-add-btn { transform: translateY(0); }
+.hover-add-btn:hover { background: #333; }
+.price-sale { font-weight: 900; font-size: 1rem; color: #0E0E0E; }
+.price-original { font-size: .74rem; color: #888; text-decoration: line-through; font-weight: 400; }
+.price-regular { font-weight: 900; font-size: 1rem; color: #0A0A0A; }
+.shoe-oos-overlay { position: absolute; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.38); backdrop-filter: blur(1.5px); }
+.shoe-oos-badge { background: rgba(239,68,68,0.95); color: #fff; font-size: .85rem; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; padding: .5rem 1.4rem; border-radius: 2px; }
+.shoe-shine { display: none; }
+.shoe-body { display: flex; flex-direction: column; gap: 4px; padding: 0; flex: 1; min-height: 0; }
+.shoe-brand { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: #737373; margin-bottom: 0; }
+.shoe-name { font-family: "Fraunces", Georgia, serif; font-weight: 500; color: #0E0E0E; text-decoration: none; font-size: 15px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; min-height: 0; transition: color .2s; }
+.shoe-name:hover { color: #555; }
+.shoe-color { font-size: 12px; line-height: 1.3; color: #737373; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shoe-meta { display: flex; flex-wrap: wrap; gap: 6px; }
+.shoe-meta .sg-chip { font-size: .68rem; padding: .16rem .55rem; border-radius: 999px; background: #f9f9f9; color: #000; border: 1px solid var(--sg-line); }
+.shoe-foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; }
+.shoe-price { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-top: 2px; line-height: 1.2; }
+.mobile-add-btn { display: none; width: 100%; margin-top: 10px; padding: 10px 16px; border: 0; background: #0E0E0E; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; }
+.shoe-add { width: 38px; height: 38px; border-radius: 10px; border: 1px solid #0A0A0A; background: #0A0A0A; color: #fff; font-size: 1rem; display: flex; align-items: center; justify-content: center; transition: all .3s ease; text-decoration: none; cursor: pointer; }
+.shoe-add:hover { background: #fff; color: #0A0A0A; }
+.shoe-add-oos { background: #6b7280 !important; border-color: #6b7280 !important; }
+.shoe-add-oos:hover { background: #4b5563 !important; color: #fff !important; border-color: #4b5563 !important; }
+@media (max-width: 1023px) { .mobile-add-btn { display: block; } }
+@media (max-width: 768px) { .shoe-name { font-size: 15px; } .shoe-price { font-size: 1.1rem; } }
+@media (max-width: 576px) { .shoe-brand { font-size: 10px; } .shoe-name { font-size: 14px; } .shoe-color { font-size: 11px; } .shoe-price { font-size: 1rem; gap: 6px; } }
+
+/* VARIANT MODAL */
+.vm-overlay { position: fixed; inset: 0; z-index: 9000; background: rgba(0,0,0,0.55); backdrop-filter: blur(4px); display: flex; align-items: flex-end; justify-content: center; overflow-y: auto; padding: 16px; }
+@media (min-width: 600px) { .vm-overlay { align-items: center; } }
+.vm-box { background: #fff; border-radius: 20px 20px 0 0; width: 100%; max-width: 520px; max-height: 92vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 -8px 40px rgba(0,0,0,.18); }
+@media (min-width: 600px) { .vm-box { border-radius: 16px; max-height: 85vh; } }
+.vm-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 14px; border-bottom: 1px solid #f0f0f0; flex-shrink: 0; }
+.vm-title { font-weight: 700; font-size: 1rem; color: #111; }
+.vm-close { width: 32px; height: 32px; border: none; background: #f5f5f5; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 0.85rem; color: #555; transition: background .2s; }
+.vm-close:hover { background: #e0e0e0; }
+.vm-preview { display: flex; gap: 14px; padding: 16px 20px; border-bottom: 1px solid #f0f0f0; flex-shrink: 0; }
+.vm-img { width: 80px; height: 80px; object-fit: cover; border-radius: 8px; border: 1px solid #e5e5e5; flex-shrink: 0; transition: all 0.3s; }
+.vm-pinfo { flex: 1; min-width: 0; }
+.vm-pname { font-weight: 700; font-size: 0.9rem; color: #111; line-height: 1.3; margin-bottom: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.vm-pprice { font-weight: 900; font-size: 1.1rem; color: #0A0A0A; margin-bottom: 6px; }
+.vm-pattr { font-size: 0.8rem; color: #666; }
+.vm-body { flex: 1; overflow-y: auto; }
+.vm-section { padding: 14px 20px; border-bottom: 1px solid #f5f5f5; }
+.vm-label { font-weight: 700; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: #888; margin-bottom: 10px; }
+.vm-color-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.vm-color-btn { display: flex; align-items: center; gap: 7px; border: 1.5px solid #e5e5e5; border-radius: 8px; padding: 6px 12px 6px 6px; cursor: pointer; background: #fff; transition: all 0.18s; position: relative; }
+.vm-color-btn:hover { border-color: #aaa; }
+.vm-color-btn.active { border-color: #111; border-width: 2px; background: #fafafa; }
+.vm-color-img { width: 32px; height: 32px; object-fit: cover; border-radius: 5px; border: 1px solid #e5e5e5; }
+.vm-color-swatch { width: 24px; height: 24px; border-radius: 50%; border: 1px solid rgba(0,0,0,.12); }
+.vm-color-name { font-size: 0.82rem; font-weight: 600; color: #111; }
+.vm-color-check { display: none; position: absolute; right: 6px; font-size: 0.75rem; color: #111; }
+.vm-color-btn.active .vm-color-check { display: block; }
+.vm-size-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.vm-size-btn { min-width: 52px; height: 40px; padding: 0 12px; border: 1.5px solid #e0e0e0; border-radius: 8px; background: #fff; cursor: pointer; font-weight: 600; font-size: 0.88rem; color: #111; transition: all 0.18s; display: flex; align-items: center; justify-content: center; gap: 4px; }
+.vm-size-btn:hover:not(.oos) { border-color: #111; }
+.vm-size-btn.active { border-color: #111; border-width: 2px; background: #111; color: #fff; }
+.vm-size-btn.oos { color: #bbb; border-color: #e5e5e5; cursor: not-allowed; background: #fafafa; }
+.vm-oos-tag { font-size: 0.6rem; color: #e74c3c; font-weight: 700; }
+.vm-qty-row { display: flex; align-items: center; gap: 12px; }
+.vm-qty-btn { width: 36px; height: 36px; border-radius: 50%; border: 1.5px solid #e0e0e0; background: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 1rem; color: #111; transition: all 0.15s; }
+.vm-qty-btn:hover { border-color: #111; background: #f5f5f5; }
+.vm-qty-val { font-size: 1.1rem; font-weight: 700; min-width: 28px; text-align: center; }
+.vm-footer { padding: 16px 20px; border-top: 1px solid #f0f0f0; flex-shrink: 0; }
+.vm-btn-add { width: 100%; height: 50px; background: #111; color: #fff; border: none; border-radius: 10px; font-weight: 700; font-size: 0.95rem; letter-spacing: 0.06em; cursor: pointer; transition: background 0.2s; }
+.vm-btn-add:hover { background: #333; }
+.vm-fade-enter-active, .vm-fade-leave-active { transition: opacity 0.25s; }
+.vm-fade-enter-from, .vm-fade-leave-to { opacity: 0; }
+.vm-fade-enter-active .vm-box, .vm-fade-leave-active .vm-box,
+.vm-fade-enter-active .vm-box-quick, .vm-fade-leave-active .vm-box-quick { transition: transform 0.25s; }
+.vm-fade-enter-from .vm-box, .vm-fade-leave-to .vm-box,
+.vm-fade-enter-from .vm-box-quick, .vm-fade-leave-to .vm-box-quick { transform: translateY(30px); }
+
+/* ——— Quick view như mẫu JapanSport — gọn, không dài ——— */
+.vm-box-quick { background: #fff; border-radius: 16px; width: 100%; max-width: 820px; max-height: 72vh; display: flex; flex-direction: column; overflow: hidden; position: relative; box-shadow: 0 20px 60px rgba(0,0,0,.22); }
+.vm-close-quick { position: absolute; top: 10px; right: 10px; width: 32px; height: 32px; border-radius: 50%; border: 1.5px solid #e5e7eb; background: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 5; color: #111; }
+.vm-quick-grid { display: grid; grid-template-columns: 0.98fr 1.02fr; max-height: 72vh; overflow: hidden; }
+.vm-gallery { background: #f3f5f7; padding: 10px; display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+.vm-main-wrap { position: relative; background: #eef1f4; border-radius: 12px; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; max-height: 340px; flex-shrink: 0; }
+.vm-main-img { width: 84%; height: 84%; object-fit: contain; }
+.vm-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 30px; height: 30px; border-radius: 50%; border: 1px solid #e5e7eb; background: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.12); color: #333; font-size: .85rem; }
+.vm-nav-prev { left: 8px; }
+.vm-nav-next { right: 8px; }
+.vm-thumbs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.vm-thumb { width: 52px; height: 52px; border-radius: 8px; border: 1.5px solid #e5e7eb; overflow: hidden; background: #fff; flex-shrink: 0; cursor: pointer; padding: 2px; }
+.vm-thumb.active { border-color: #0A0A0A; }
+.vm-thumb img { width: 100%; height: 100%; object-fit: cover; border-radius: 6px; }
+.vm-details { padding: 14px 18px 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 7px; max-height: 72vh; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.vm-details .vm-section { padding: 5px 0; border: none; margin: 0; }
+.vm-title-quick { font-weight: 800; font-size: 1.18rem; line-height: 1.32; color: #111; margin: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.vm-brand-line { font-size: .82rem; color: #666; line-height: 1.4; }
+.vm-material-line { font-size: .82rem; color: #555; line-height: 1.4; }
+.vm-price-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-bottom: 10px; border-bottom: 1px solid #f0f0f0; }
+.vm-price-now { font-weight: 900; font-size: 1.28rem; color: #e53935; }
+.vm-price-old { font-size: .9rem; color: #888; text-decoration: line-through; }
+.vm-discount-tag { background: #e53935; color: #fff; font-size: .72rem; font-weight: 800; padding: 3px 6px; border-radius: 4px; }
+.vm-size-guide { font-size: .8rem; color: #555; text-decoration: underline; display: inline-flex; align-items: center; margin-top: 8px; cursor: pointer; }
+.vm-qty-box { display: inline-flex; align-items: center; border: 1px solid #e5e7eb; border-radius: 999px; overflow: hidden; background: #fff; }
+.vm-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
+.vm-btn-buy { height: 48px; border: 1.5px solid #0A0A0A; background: #fff; color: #0A0A0A; border-radius: 999px; font-weight: 800; font-size: .9rem; cursor: pointer; }
+.vm-btn-buy:hover { background: #f9fafb; }
+.vm-btn-add { height: 48px; border: 1.5px solid #0A0A0A; background: #0A0A0A; color: #fff; border-radius: 999px; font-weight: 800; font-size: .9rem; cursor: pointer; }
+.vm-btn-add:hover { background: #000; }
+@media (max-width: 768px) {
+  .vm-box-quick { max-width: 96vw; max-height: 92vh; }
+  .vm-quick-grid { grid-template-columns: 1fr; overflow-y: auto; }
+  .vm-gallery { padding: 12px; }
+  .vm-main-wrap { aspect-ratio: 1.15; }
+  .vm-details { padding: 16px; }
+  .vm-actions { grid-template-columns: 1fr; }
+}
+</style>
