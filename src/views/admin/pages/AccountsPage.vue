@@ -1,0 +1,146 @@
+<!-- Trang: Quản lý tài khoản -->
+<script setup>
+import { ref, computed } from 'vue'
+import { db, openForm, getRoleBadgeClass, roleName, toggleAccountLock, apiWrite } from '../adminStore'
+
+const search = ref('')
+const roleMsg = ref('')
+const roleMsgOk = ref(true)
+const savingId = ref(null)
+const isActiveAccount = a => !(a?.active === false || a?.active === 0 || String(a?.active).toLowerCase() === 'false' || String(a?.active) === '0')
+const isAdminAccount = a => a?.role_key === 'admin' || Number(a?.role_id) === 1 || /admin|administrator/i.test(String(a?.role || a?.role_name || ''))
+const activeAdminCount = computed(() => (db.accounts || []).filter(a => isAdminAccount(a) && isActiveAccount(a)).length)
+const protectedAdminId = computed(() => (db.accounts || []).filter(isAdminAccount).map(a => Number(a.id)).filter(Number.isFinite).sort((x,y) => x-y)[0] || null)
+const employeeRoleId = computed(() => { const r = (db.roles || []).find(x => x.role_key === 'employee' || /employee|staff|nhan vien|nhân viên/i.test(String(x.name || ''))); return Number(r?.id ?? r?.value ?? 3) })
+
+const filtered = computed(function () {
+  const q = search.value.trim().toLowerCase()
+  return (db.accounts || []).filter(function (a) {
+    return (
+      !q ||
+      (a.name || '').toLowerCase().indexOf(q) !== -1 ||
+      (a.username || '').toLowerCase().indexOf(q) !== -1 ||
+      (a.email || '').toLowerCase().indexOf(q) !== -1
+    )
+  })
+})
+
+const sections = computed(function () {
+  const list = filtered.value
+  const isAdmin = a => a.role_key === 'admin' || Number(a.role_id) === 1
+  const isCustomer = a => a.role_key === 'customer' || Number(a.role_id) === 2
+  const isEmployee = a => a.role_key === 'employee' || Number(a.role_id) === 3
+  const admins = list.filter(isAdmin)
+  const customers = list.filter(isCustomer)
+  const employees = list.filter(isEmployee)
+  const others = list.filter(a => !isAdmin(a) && !isCustomer(a) && !isEmployee(a))
+  const arr = [
+    { key: 'admin', title: 'Quản trị viên', icon: 'icon-shield-lock', rows: admins },
+    { key: 'employee', title: 'Nhân viên', icon: 'icon-person-badge', rows: employees },
+    { key: 'customer', title: 'Khách hàng', icon: 'icon-people', rows: customers },
+  ]
+  if (others.length) {
+    arr.push({ key: 'other', title: 'Vai trò khác', icon: 'icon-question-circle', rows: others })
+  }
+  return arr
+})
+
+async function changeRole(a, value) {
+  const newRole = Number(value)
+  if (!a || Number(a.role_id) === newRole) return
+  const prev = a.role_id
+  a.role_id = newRole // cap nhat lac quan -> giao dien doi nhom ngay
+  savingId.value = a.id
+  try {
+    const res = await apiWrite('/accounts/' + a.id, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role_id: newRole }),
+    })
+    if (!res.ok) throw new Error(res.data?.message || 'fail')
+    roleMsgOk.value = true
+    roleMsg.value = 'Đã đổi vai trò của ' + (a.name || a.username || 'tài khoản') + ' thành ' + roleName(newRole)
+  } catch (e) {
+    a.role_id = prev // khoi phuc neu loi
+    roleMsgOk.value = false
+    roleMsg.value = e?.message || 'Không thể cập nhật vai trò. Vui lòng thử lại.'
+  }
+  savingId.value = null
+  setTimeout(function () { roleMsg.value = '' }, 3500)
+}
+</script>
+
+<template>
+  <div class="fade-in">
+    <div class="flex flex-wrap justify-between items-center gap-2 mb-4">
+      <div class="flex bg-white rounded-2 shadow-sm" style="max-width:320px;">
+        <span class="flex items-center bg-white border-0"><i class="icon icon-search text-gray-600" aria-hidden="true"></i></span>
+        <input v-model="search" type="search" class="sg-input border-0" placeholder="Tìm tài khoản…" aria-label="Tìm tài khoản theo tên, tên đăng nhập hoặc email">
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button @click="openForm('accounts', null, { role_id: employeeRoleId })" class="btn btn-dark btn-sm rounded-2 font-bold shadow-sm px-3">
+          <i class="icon icon-person-badge mr-1" aria-hidden="true"></i> Thêm nhân viên
+        </button>
+        <button @click="openForm('accounts')" class="btn btn-light btn-sm rounded-2 font-bold shadow-sm px-3 border">
+          <i class="icon icon-person-plus mr-1" aria-hidden="true"></i> Thêm tài khoản
+        </button>
+      </div>
+    </div>
+
+    <div v-if="roleMsg" class="alert py-2 px-3 rounded-2 text-sm mb-3" role="status" aria-live="polite"
+         :class="roleMsgOk ? 'bg-gray-100 text-gray-900' : 'bg-red-100 text-red-600'"
+         v-text="roleMsg"></div>
+
+    <div v-for="sec in sections" :key="sec.key" class="mb-4">
+      <div class="flex items-center gap-2 mb-2">
+        <i :class="['icon', sec.icon, 'text-gray-600']" aria-hidden="true"></i>
+        <h6 class="font-bold mb-0 text-gray-900" v-text="sec.title"></h6>
+        <span class="badge rounded-1 bg-light-gray text-gray-900" v-text="sec.rows.length"></span>
+      </div>
+      <div class="bg-white rounded-1 shadow-sm overflow-hidden">
+        <div class="table-responsive">
+          <table class="table align-middle mb-0">
+            <thead>
+              <tr class="text-gray-600 text-sm">
+                <th scope="col" class="pl-4">Tài khoản</th>
+                <th scope="col">Email</th>
+                <th scope="col">Vai trò</th>
+                <th scope="col">Trạng thái</th>
+                <th scope="col" class="text-end pr-4">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="a in sec.rows" :key="a.id">
+                <td class="pl-4">
+                  <div class="flex items-center gap-2">
+                    <div class="rounded-full bg-gray-900 text-white flex items-center justify-center font-bold" style="width:36px;height:36px;" v-text="(a.name || a.username || '?').charAt(0).toUpperCase()"></div>
+                    <div>
+                      <p class="font-medium mb-0 text-gray-900 text-sm" v-text="a.name || a.username"></p>
+                      <p class="text-gray-600 mb-0" style="font-size:0.75rem;" v-text="'@' + (a.username || '')"></p>
+                    </div>
+                  </div>
+                </td>
+                <td class="text-sm" v-text="a.email"></td>
+                <td><span class="badge rounded-1" :class="getRoleBadgeClass(a.role_id)" v-text="roleName(a.role_id)"></span></td>
+                <td><span class="badge rounded-1" :class="isActiveAccount(a) ? 'badge-active' : 'bg-secondary-subtle text-gray-600'" v-text="isActiveAccount(a) ? 'Hoạt động' : 'Đã khóa'"></span></td>
+                <td class="text-end pr-4">
+                  <button @click="openForm('accounts', a)" class="btn btn-sm btn-light border rounded-2 mr-1" :aria-label="'Chỉnh sửa tài khoản ' + (a.name || a.username)" title="Chỉnh sửa tài khoản"><i class="icon icon-pencil" aria-hidden="true"></i></button>
+                  <button
+                    @click="toggleAccountLock(a)"
+                    class="btn btn-sm btn-light border rounded-2 text-gray-700"
+                    :disabled="isAdminAccount(a) && (Number(a.id) === protectedAdminId || (isActiveAccount(a) && activeAdminCount <= 1))"
+                    :aria-label="(isActiveAccount(a) ? 'Khóa tài khoản ' : 'Mở khóa tài khoản ') + (a.name || a.username)"
+                    :title="isAdminAccount(a) && Number(a.id) === protectedAdminId ? 'Tài khoản Admin bảo vệ, không thể khóa' : (isAdminAccount(a) && isActiveAccount(a) && activeAdminCount <= 1 ? 'Không thể khóa Admin cuối cùng' : (isActiveAccount(a) ? 'Khóa tài khoản' : 'Mở khóa tài khoản'))"
+                  ><i class="icon" :class="isActiveAccount(a) ? 'icon-lock' : 'icon-check-circle'" aria-hidden="true"></i></button>
+                </td>
+              </tr>
+              <tr v-if="!sec.rows.length">
+                <td colspan="5" class="text-center text-gray-600 text-sm py-4">{{ search.trim() ? 'Không tìm thấy tài khoản phù hợp trong nhóm này.' : 'Chưa có tài khoản trong nhóm này.' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>

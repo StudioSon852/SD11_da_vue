@@ -1,0 +1,44 @@
+# Phu thuoc
+node_modules/
+
+# Du lieu lam viec cua Codex (luu ngoai repository)
+.codex-work/
+
+# Prototype Figma da duoc tich hop vao src/
+all figma*/
+
+# Ban build
+dist/
+build/
+coverage/
+
+# Tep tam va ket qua trung gian cua cac script bao cao
+tmp/
+
+# Bien moi truong - TUYET DOI khong commit (chua mat khau DB, JWT_SECRET, mat khau mail)
+.env
+.env.local
+.env.*.local
+backend/.env
+backend/.env.local
+!.env.example
+!backend/.env.example
+
+# Log & rac he thong
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Anh chup tu script test
+products.png
+admin.png
+# Dependencies and build output
+node_modules/
+dist/
+backend/target/
+
+# Local environment files
+.env
+.env.*
+!.env.example

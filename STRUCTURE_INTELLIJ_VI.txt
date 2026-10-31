@@ -1,0 +1,20 @@
+SD11/ (thu muc goc - frontend Vue + workspace)
+|-- src/                         [GIU NGUYEN - Vue source]
+|-- public/                      [GIU NGUYEN - static assets]
+|-- package.json                 [npm scripts/dependencies]
+|-- vite.config.js               [proxy /api -> http://localhost:8080]
+|-- index.html
+|-- database/
+|   `-- SD_11_DATABASE_SETUP.sql [SQL duy nhat: schema + migration + reset demo + admin]
+|-- backend/                     [Maven project mo bang IntelliJ]
+|   |-- pom.xml
+|   |-- .env.example
+|   |-- .run/SD11_API.run.xml
+|   |-- README_INTELLIJ_VI.md
+|   `-- src/main/java/vn/shoegroup/sd11/...
+|-- README_SD11_VI.md
+|-- STRUCTURE_INTELLIJ_VI.txt
+`-- START_FRONTEND_FOR_INTELLIJ.bat
+
+Khong tao folder frontend moi va khong di chuyen src/public/package.json.
+IntelliJ chi mo backend; Vue tiep tuc chay tu thu muc goc SD11.
